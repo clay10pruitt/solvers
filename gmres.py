@@ -39,26 +39,35 @@ def gmres(A, b, x, iterations=ITER, tolerance=TOL):
     Q = (r/r_norm)
     beta = r_norm*e1
 
-    for k in range(m):
-
+    for k in range(3):
         debug_print("="*32)
         debug_print("\tITERATION:\t" + str(k))
         debug_print("="*32)
 
-        # expand  H
-        # TODO This is bad
-        expand = np.zeros((H.shape[0]+1, H.shape[0]+1))
-        expand[:H.shape[0], :H.shape[0]] = H
+        debug_print("H:\n" + str(H))
+        debug_print("Q:\n" + str(Q))
+
+        # expand  H and Q for adding new entries
+        expand = np.zeros((H.shape[0]+1, H.shape[0]))
+        #debug_print("H EXPAND:\n" + str(expand))
+        expand[:H.shape[0], :H.shape[1]] = H
         H = expand
+        
+        expand =  np.zeros((Q.shape[0], Q.shape[1]+1))
+        #debug_print("Q EXPAND:\n" + str(expand))
+        expand[:, :Q.shape[1]] = Q
+        Q = expand
 
         # arnoldi
         H[:k+1, k], Q[:, k+1] = arnoldi(A, Q, k)
 
-        debug_print("HESSENBERG: ")
-        debug_print(H)
+        debug_print("HESSENBERG:\n" + str(H))
+        #debug_print("KRYLOV:\n" + str(Q))
+        
+        continue
 
         # eliminate last element in k^th row of H, then update rotation matrix
-        H[0:k+1, k], cs, sn = apply_givens_rotation(H[1:k+1, k], cs, sn, k)
+        H[:k+1, k], cs[k], sn[k] = apply_givens_rotation(H[:k+1, k], cs, sn, k)
 
         # update the residual vector
         beta[k+1] = -sn[k]@beta[k]
@@ -68,32 +77,44 @@ def gmres(A, b, x, iterations=ITER, tolerance=TOL):
         if residual < tolerance:
             break
     
+    return
     # calculate result
-    y, res, rank, s = np.lingalg.lstsq(H[1:k, 1:k], beta[1:k]) # matrix left division
+    y, res, rank, s = np.linalg.lstsq(H[1:k, 1:k], beta[1:k]) # matrix left division
     x = x + Q[:, 1:k] @ y
 
     return x
 
+"""
+Run the Arnoldi iteration on a matrix A with Krylov subspace Q containing k vectors.
+@param A: square ndarray
+@param Q:
+@param k: number of columns in the Krylov matrix
+"""
 def arnoldi(A, Q, k):
     debug_print("Calculating Arnoldi...")
-    H = np.empty((k+1, k+1))
-    q = A@Q[:,k]
-    for i in range(k):
-        h = q.T@Q[:,i]
-        q = q - h@Q[:,i]
-        H = np.append(H, h, axis=1)
-    H = np.append(H, np.linalg.norm(q))
-    q = q/np.linalg.norm(q)
-    return H, q
+    # TODO: Does the initial vector need to be normalized?
+    q = A@Q[:,k] # initial Krylov vector
+    h = np.zeros(k+1)
+    for i in range(k): # modified Gram-Schmidt, keeping the Hessenberg
+        h[i] = q.T@Q[:,i]
+        q = q - h[i]*Q[:,i]
+    h[k] = np.linalg.norm(q)
+    q = q/h[k]
+    #debug_print("h:\n" + str(h) + "\nq:\n" + str(q))
+    return h, q
 
 def apply_givens_rotation(h, cs, sn, k):
+
+    debug_print("Applying Givens rotation...")
+
     # apply for ith column
-    for i in range (0, k):
+    for i in range (k-1):
         temp = cs[i]*h[i] + sn[i]*h[i+1]
         h[i+1] = -sn[i]*h[i] + cs[i]*h[i+1]
         h[i] = temp
 
     # update the next sin/cos values for rotation
+    debug_print("h:\n" + str(h))
     [cs_k, sn_k] = givens_rotation(h[k], h[k+1])
 
     # eliminate H[i+1, i]
